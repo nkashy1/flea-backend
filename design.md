@@ -42,14 +42,14 @@ We go through the requirements for each type of user.
 
 Should be able to:
 
-1. **Register tasks:** Specify tasks with a 5-tuple
-`(modelId, hyperparametersId, initialCheckpointId, finalCheckpointId, deadline)` along with a *task
-bundle*, where `modelId`, `hyperparametersId`, `initialCheckpointId`, and `finalCheckpointId` refer
-to [`tensorio-models`](https://github.com/doc-ai/tensorio-models) resources, `deadline` is a UTC
-date and time object specified at the level of seconds, and the *task bundle* is a single file
-containing all the information required to run a task (assumed to be comprehensible to Flea
-clients). Each task dictates updates with parameters specified by the task bundle to any checkpoint
-between `initialCheckpoint` and `finalCheckpoint` of the given hyperparameters for the given model.
+1. **Register tasks:** Specify tasks with a 4-tuple
+`(modelId, hyperparametersId, checkpointIds, deadline)` along with a *task bundle*, where `modelId`,
+`hyperparametersId`, and `checkpointIds` refer to
+[`tensorio-models`](https://github.com/doc-ai/tensorio-models) resources, `deadline` is a UTC date
+and time object specified at the level of seconds, and the *task bundle* is a single file containing
+all the information required to run a task (assumed to be comprehensible to Flea clients). Each task
+dictates updates with parameters specified by the task bundle to any checkpoint for the given
+hyperparameters for the given model which is included in the `checkpointIds` list.
 
 1. **Close tasks:** Designate any available task that they are authorized to modify as closed,
 thereby preventing any client from commiting to that task or registering updates for that task
@@ -72,7 +72,7 @@ Should be able to:
 `checkpointId` are signifiers for [`tensorio-models`](https://github.com/doc-ai/tensorio-models)
 resources of the corresponding type and a task is considered to be open for a given triple if its
 `deadline` has not yet passed (according to the clock on the Flea API server) and the given
-`checkpointId` lies between the `initialCheckpointId` and `finalCheckpointId` for the task.
+`checkpointId` lies in the `checkpointIds` list for the task.
 
 1. **Commit to a task:** Request that they be allowed to submit an update corresponding to the
 specification of a given task and, if their request is granted, receive a URL to which they can
@@ -103,9 +103,42 @@ Should be able to:
 
 ## Components
 
-1. **Flea API** - Responsible for all but the aggregation and evaluation requirements for task
-generators.
+1. Flea API
 
-1. **Flea aggregators** - Responsible for aggregation of updates submitted for a given task.
+1. Flea aggregators
 
-1. **Flea evaluators** - Responsible for the evaluation of aggregations.
+1. Flea evaluators
+
+### Flea API
+Responsible for all but the aggregation and evaluation requirements for task generators. Will expose
+`gRPC` as well as `REST` endpoints following the model of
+[`tensorio-models`](https://github.com/doc-ai/tensorio-models). The API will be implemented in
+[`go`](https://golang.org). The `REST` API will be generated
+from the `gRPC` API using [`grpc-gateway`](https://github.com/grpc-ecosystem/grpc-gateway).
+
+### Flea aggregators and Flea evaluators
+
+Flea aggregators are responsible for aggregation of updates submitted for a given task.
+
+Flea evaluators are responsible for the evluation of aggregations produced by the aggregators.
+
+These are intended to be scripts which can be either triggered manually by data scientists or which
+can be triggered automatically (for example, by a `cron` job). Moreover, since they are intended to
+work with models, hyperparameters, and checkpoints created by the data scientists who generated the
+tasks they correspond to, there is a certain degree of freedom in how they are implemented. It is
+expected that most of these scripts will be implemented in Python, but the only requirement is that
+the code necessary to run an aggregator or an evaluator be placed in a uniquely named subdirectory
+of the `aggregators/` and `evaluators/` directories in root of this repository along with a
+`Dockerfile` that can be used to eventually run the script in a container.
+
+The aggregator and evaluator containers will need to be able to access object storage. Initially,
+we plan to support only Google Cloud Storage, meaning that the scripts will simply need to accept
+a `GOOGLE_APPLICATION_CREDENTIALS` environment variable (as described
+[here](https://cloud.google.com/docs/authentication/getting-started)). Generalization of this
+pattern is currently out of scope of this design doc, and this directory structure is unassuming and
+unconstrained enough that we are not painting ourselves into any corners as far as configuration for
+access to arbitrary object storage backends is concerned.
+
+Any deployment of a Flea backend will specify as a deployment parameter which aggregator or
+evaluator to use by specifying subdirectories of the `aggregator/` and `evaluator/` directories
+respectively.
